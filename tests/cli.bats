@@ -14,6 +14,7 @@ setup_file() {
 }
 
 teardown_file() {
+	rm -f "$PROJECT_ROOT/install_channel"
 	rm -rf "$HOME"
 	if [[ -n "${ORIGINAL_HOME:-}" ]]; then
 		export HOME="$ORIGINAL_HOME"
@@ -47,6 +48,7 @@ SCRIPT
 setup() {
 	rm -rf "$HOME/.config"
 	mkdir -p "$HOME"
+	rm -f "$PROJECT_ROOT/install_channel"
 }
 
 @test "mole --help prints command overview" {
@@ -61,6 +63,18 @@ setup() {
 	run env HOME="$HOME" "$PROJECT_ROOT/mole" --version
 	[ "$status" -eq 0 ]
 	[[ "$output" == *"$expected_version"* ]]
+}
+
+@test "mole --version shows nightly channel metadata" {
+	expected_version="$(grep '^VERSION=' "$PROJECT_ROOT/mole" | head -1 | sed 's/VERSION=\"\(.*\)\"/\1/')"
+	cat > "$PROJECT_ROOT/install_channel" <<'EOF'
+CHANNEL=nightly
+EOF
+
+	run env HOME="$HOME" "$PROJECT_ROOT/mole" --version
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"Mole version $expected_version"* ]]
+	[[ "$output" == *"Channel: Nightly"* ]]
 }
 
 @test "mole unknown command returns error" {

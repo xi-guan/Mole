@@ -87,6 +87,18 @@ is_homebrew_install() {
     return 1
 }
 
+get_install_channel() {
+    local channel_file="$SCRIPT_DIR/install_channel"
+    local channel="stable"
+    if [[ -f "$channel_file" ]]; then
+        channel=$(sed -n 's/^CHANNEL=\(.*\)$/\1/p' "$channel_file" | head -1)
+    fi
+    case "$channel" in
+        nightly | dev | stable) printf '%s\n' "$channel" ;;
+        *) printf 'stable\n' ;;
+    esac
+}
+
 # Background update notice
 check_for_updates() {
     local msg_cache="$HOME/.cache/mole/update_message"
@@ -205,7 +217,13 @@ show_version() {
         install_method="Homebrew"
     fi
 
+    local channel
+    channel=$(get_install_channel)
+
     printf '\nMole version %s\n' "$VERSION"
+    if [[ "$channel" == "nightly" ]]; then
+        printf 'Channel: Nightly\n'
+    fi
     printf 'macOS: %s\n' "$os_ver"
     printf 'Architecture: %s\n' "$arch"
     printf 'Kernel: %s\n' "$kernel"

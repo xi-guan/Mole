@@ -266,6 +266,45 @@ get_installed_version() {
     fi
 }
 
+resolve_install_channel() {
+    case "${MOLE_VERSION:-}" in
+        main | latest)
+            printf 'nightly\n'
+            return 0
+            ;;
+        dev)
+            printf 'dev\n'
+            return 0
+            ;;
+    esac
+
+    if [[ "${MOLE_EDGE_INSTALL:-}" == "true" ]]; then
+        printf 'nightly\n'
+        return 0
+    fi
+
+    printf 'stable\n'
+}
+
+write_install_channel_metadata() {
+    local channel="$1"
+    local metadata_file="$CONFIG_DIR/install_channel"
+
+    local tmp_file
+    tmp_file=$(mktemp "${CONFIG_DIR}/install_channel.XXXXXX") || return 1
+    {
+        printf 'CHANNEL=%s\n' "$channel"
+    } > "$tmp_file" || {
+        rm -f "$tmp_file" 2> /dev/null || true
+        return 1
+    }
+
+    mv -f "$tmp_file" "$metadata_file" || {
+        rm -f "$tmp_file" 2> /dev/null || true
+        return 1
+    }
+}
+
 # CLI parsing (supports main/latest and version tokens).
 parse_args() {
     local -a args=("$@")
@@ -712,6 +751,12 @@ perform_install() {
         installed_version="$source_version"
     fi
 
+    local install_channel
+    install_channel="$(resolve_install_channel)"
+    if ! write_install_channel_metadata "$install_channel"; then
+        log_warning "Could not write install channel metadata"
+    fi
+
     # Edge installs get a suffix to make the version explicit.
     if [[ "${MOLE_EDGE_INSTALL:-}" == "true" ]]; then
         installed_version="${installed_version}-edge"
@@ -793,6 +838,12 @@ perform_update() {
 
     if [[ -z "$updated_version" ]]; then
         updated_version="$target_version"
+    fi
+
+    local install_channel
+    install_channel="$(resolve_install_channel)"
+    if ! write_install_channel_metadata "$install_channel"; then
+        log_warning "Could not write install channel metadata"
     fi
 
     echo -e "${GREEN}${ICON_SUCCESS}${NC} Updated to latest version, $updated_version"
