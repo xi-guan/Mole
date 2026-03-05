@@ -13,7 +13,7 @@ source "$SCRIPT_DIR/lib/core/commands.sh"
 trap cleanup_temp_files EXIT INT TERM
 
 # Version and update helpers
-VERSION="1.28.1"
+VERSION="1.29.0"
 MOLE_TAGLINE="Deep clean and optimize your Mac."
 
 is_touchid_configured() {
@@ -37,6 +37,14 @@ get_latest_version_from_github() {
     echo "$version"
 }
 
+# Check if mole exists in a brew formula list string.
+# Args: $1 - brew_list output string
+# Returns 0 if "mole" appears as a whole line, 1 otherwise.
+_mole_in_brew_list() {
+    local list="$1"
+    [[ -n "$list" ]] && [[ $'\n'"$list"$'\n' == *$'\n'"mole"$'\n'* ]]
+}
+
 # Install detection (Homebrew vs manual).
 # Uses variable capture + string matching to avoid SIGPIPE under pipefail.
 is_homebrew_install() {
@@ -49,15 +57,10 @@ is_homebrew_install() {
         brew_list=$(brew list --formula 2> /dev/null) || true
     fi
 
-    # Helper to check if mole is in brew list
-    _mole_in_brew_list() {
-        [[ -n "$brew_list" ]] && [[ $'\n'"$brew_list"$'\n' == *$'\n'"mole"$'\n'* ]]
-    }
-
     if [[ -L "$mole_path" ]]; then
         link_target=$(readlink "$mole_path" 2> /dev/null) || true
         if [[ "$link_target" == *"Cellar/mole"* ]]; then
-            $has_brew && _mole_in_brew_list && return 0
+            $has_brew && _mole_in_brew_list "$brew_list" && return 0
             return 1
         fi
     fi
@@ -67,7 +70,7 @@ is_homebrew_install() {
             /opt/homebrew/bin/mole | /usr/local/bin/mole)
                 if [[ -d /opt/homebrew/Cellar/mole ]] || [[ -d /usr/local/Cellar/mole ]]; then
                     if $has_brew; then
-                        _mole_in_brew_list && return 0
+                        _mole_in_brew_list "$brew_list" && return 0
                     else
                         return 0 # Cellar exists, probably Homebrew install
                     fi
@@ -80,7 +83,7 @@ is_homebrew_install() {
         local brew_prefix
         brew_prefix=$(brew --prefix 2> /dev/null)
         if [[ -n "$brew_prefix" && "$mole_path" == "$brew_prefix/bin/mole" && -d "$brew_prefix/Cellar/mole" ]]; then
-            _mole_in_brew_list && return 0
+            _mole_in_brew_list "$brew_list" && return 0
         fi
     fi
 

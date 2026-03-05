@@ -859,8 +859,8 @@ clean_application_support_logs() {
             if [[ -d "$candidate" ]]; then
                 # Quick count check - skip if too many items to avoid hanging
                 local quick_count
-                quick_count=$(command find "$candidate" -mindepth 1 -maxdepth 1 -print0 2> /dev/null | tr -d '\0' | wc -c)
-                if [[ "$quick_count" -gt 5000 ]]; then
+                quick_count=$(command find "$candidate" -mindepth 1 -maxdepth 1 -printf '1\n' 2> /dev/null | wc -l | tr -d ' ')
+                if [[ "$quick_count" -gt 100 ]]; then
                     # Too many items - use bulk removal instead of item-by-item
                     local app_label="$app_name"
                     if [[ ${#app_label} -gt 24 ]]; then
@@ -935,8 +935,8 @@ clean_application_support_logs() {
             if [[ -d "$candidate" ]]; then
                 # Quick count check - skip if too many items
                 local quick_count
-                quick_count=$(command find "$candidate" -mindepth 1 -maxdepth 1 -print0 2> /dev/null | tr -d '\0' | wc -c)
-                if [[ "$quick_count" -gt 5000 ]]; then
+                quick_count=$(command find "$candidate" -mindepth 1 -maxdepth 1 -printf '1\n' 2> /dev/null | wc -l | tr -d ' ')
+                if [[ "$quick_count" -gt 100 ]]; then
                     local container_label="$container"
                     if [[ ${#container_label} -gt 24 ]]; then
                         container_label="${container_label:0:21}..."
