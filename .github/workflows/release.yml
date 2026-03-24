@@ -117,7 +117,7 @@ jobs:
           echo "Releasing version: $VERSION (tag: $TAG)"
 
       - name: Update Homebrew formula (Personal Tap)
-        uses: mislav/bump-homebrew-formula-action@56a283fa15557e9abaa4bdb63b8212abc68e655c # v3.6
+        uses: mislav/bump-homebrew-formula-action@ccf2332299a883f6af50a1d2d41e5df7904dd769 # v4.1
         with:
           formula-name: mole
           formula-path: Formula/mole.rb
@@ -131,7 +131,7 @@ jobs:
           COMMITTER_TOKEN: ${{ secrets.PAT_TOKEN }}
 
       - name: Update Homebrew formula (Official Core)
-        uses: mislav/bump-homebrew-formula-action@56a283fa15557e9abaa4bdb63b8212abc68e655c # v3.6
+        uses: mislav/bump-homebrew-formula-action@ccf2332299a883f6af50a1d2d41e5df7904dd769 # v4.1
         with:
           formula-name: mole
           homebrew-tap: Homebrew/homebrew-core
