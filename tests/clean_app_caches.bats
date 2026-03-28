@@ -58,20 +58,36 @@ EOF
     [[ "$output" == *"Xcode documentation index"* ]]
 }
 
-@test "clean_media_players protects spotify offline cache" {
+@test "clean_media_players protects spotify offline cache when bnk has content" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail
 source "$PROJECT_ROOT/lib/core/common.sh"
 source "$PROJECT_ROOT/lib/clean/app_caches.sh"
 mkdir -p "$HOME/Library/Application Support/Spotify/PersistentCache/Storage"
-touch "$HOME/Library/Application Support/Spotify/PersistentCache/Storage/offline.bnk"
+dd if=/dev/zero of="$HOME/Library/Application Support/Spotify/PersistentCache/Storage/offline.bnk" bs=1024 count=2 2>/dev/null
 safe_clean() { echo "CLEAN:$2"; }
 clean_media_players
 EOF
 
     [ "$status" -eq 0 ]
+    [[ "$output" != *"CLEAN:Spotify cache"* ]]
     [[ "$output" == *"Spotify cache protected"* ]]
-    [[ "$output" != *"CLEAN: Spotify cache"* ]]
+}
+
+@test "clean_media_players cleans spotify cache when bnk is empty" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+mkdir -p "$HOME/Library/Application Support/Spotify/PersistentCache/Storage"
+> "$HOME/Library/Application Support/Spotify/PersistentCache/Storage/offline.bnk"
+safe_clean() { echo "CLEAN:$2"; }
+clean_media_players
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"Spotify cache protected"* ]]
+    [[ "$output" == *"CLEAN:Spotify cache"* ]]
 }
 
 @test "clean_user_gui_applications calls all sections" {

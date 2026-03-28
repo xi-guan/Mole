@@ -441,6 +441,11 @@ clean_brave_old_versions() {
         current_version="${current_version##*/}"
         [[ -n "$current_version" ]] || continue
 
+        if [[ ! -d "$versions_dir/$current_version" ]]; then
+            echo -e "  ${GRAY}${ICON_WARNING}${NC} Brave Browser Current symlink is broken · skipping version cleanup"
+            continue
+        fi
+
         local -a old_versions=()
         local dir name
         for dir in "$versions_dir"/*; do

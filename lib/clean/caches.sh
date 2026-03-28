@@ -288,7 +288,7 @@ process_project_cache_matches() {
     local cache_dir=""
     while IFS=$'\t' read -r record_root cache_dir; do
         [[ -n "$record_root" && -n "$cache_dir" ]] || continue
-        case "$(basename "$cache_dir")" in
+        case "${cache_dir##*/}" in
             ".next")
                 flush_python_group_if_needed "$current_python_root" current_python_dirs
                 current_python_root=""
