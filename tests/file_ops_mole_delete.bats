@@ -107,15 +107,21 @@ EOF
     [ "$status_col" = "dry-run" ]
 }
 
-@test "mole_delete rejects path traversal before logging" {
+@test "mole_delete records a forensic log entry for rejected paths" {
     run bash --noprofile --norc <<EOF
 $(prelude)
 mole_delete "/tmp/../etc/hosts"
 EOF
 
     [ "$status" -ne 0 ]
-    # Validation failure happens before the log line is written.
-    [[ ! -s "$MOLE_DELETE_LOG" ]]
+    # Rejection IS logged (security-relevant), with status="rejected" and size=0.
+    # Audit trails need to distinguish refused-by-policy from never-attempted.
+    [[ -s "$MOLE_DELETE_LOG" ]]
+    local status_col size_col
+    status_col=$(awk -F'\t' 'END { print $4 }' "$MOLE_DELETE_LOG")
+    size_col=$(awk -F'\t' 'END { print $3 }' "$MOLE_DELETE_LOG")
+    [ "$status_col" = "rejected" ]
+    [ "$size_col" = "0" ]
 }
 
 @test "mole_delete is a no-op on a non-existent path" {
@@ -153,4 +159,54 @@ EOF
     local status_col
     status_col=$(awk -F'\t' 'END { print $4 }' "$MOLE_DELETE_LOG")
     [ "$status_col" = "trash-fallback-rm" ]
+    # User explicitly asked NOT to permanent-delete; fallback must surface.
+    [[ "$output" == *"Trash unavailable"* ]]
+}
+
+@test "mole_delete records 'unknown' (not 0) when size measurement fails" {
+    # Override get_path_size_kb to simulate a measurement failure (non-numeric
+    # output, non-zero exit). The actual delete still goes through safe_remove
+    # so the file is removed; only the log size column should differ.
+    local victim="$SANDBOX/measureless"
+    : > "$victim"
+
+    run bash --noprofile --norc <<EOF
+$(prelude)
+get_path_size_kb() { echo "ERR"; return 1; }
+mole_delete "$victim"
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ ! -e "$victim" ]]
+    local size_col
+    size_col=$(awk -F'\t' 'END { print $3 }' "$MOLE_DELETE_LOG")
+    [ "$size_col" = "unknown" ]
+}
+
+@test "mole_delete warns once per session when audit log is unwritable" {
+    local victim="$SANDBOX/log_blocked"
+    : > "$victim"
+    local broken_log_dir="$SANDBOX/no_write/logs"
+    mkdir -p "$(dirname "$broken_log_dir")"
+    chmod 0555 "$(dirname "$broken_log_dir")"
+
+    run bash --noprofile --norc <<EOF
+set -euo pipefail
+export MOLE_DELETE_LOG="$broken_log_dir/deletions.log"
+export MOLE_TEST_TRASH_DIR="$MOLE_TEST_TRASH_DIR"
+export MOLE_TEST_NO_AUTH=1
+source "$PROJECT_ROOT/lib/core/common.sh"
+mole_delete "$victim"
+# Second call in the same shell must NOT print again.
+: > "$SANDBOX/second_victim"
+mole_delete "$SANDBOX/second_victim"
+EOF
+
+    chmod 0755 "$(dirname "$broken_log_dir")"
+
+    [ "$status" -eq 0 ]
+    # Warning visible exactly once.
+    local warn_count
+    warn_count=$(printf '%s\n' "$output" | grep -c "deletions audit log unavailable" || true)
+    [ "$warn_count" = "1" ]
 }

@@ -421,7 +421,10 @@ safe_sudo_remove() {
 #                         ~/Library/Logs/mole/deletions.log)
 #
 # Returns 0 on success, 1 on failure. Always appends a tab-separated line to
-# the deletions log: <iso_ts>\t<mode>\t<size_kb>\t<status>\t<path>
+# the deletions log: <iso_ts>\t<mode>\t<size_kb>\t<status>\t<path>.
+# size_kb is "unknown" when du could not measure the path (permission denied,
+# disappeared mid-call); never silently coerced to 0KB so post-hoc forensics
+# can tell measured-zero from measurement-failure.
 mole_delete() {
     local path="$1"
     local needs_sudo="${2:-false}"
@@ -438,21 +441,30 @@ mole_delete() {
     # validate_path_for_deletion). Trash routing only applies to paths the
     # user could legitimately restore from, so we short-circuit invalid paths
     # up front to avoid a no-op Trash move followed by a validation failure.
+    # The rejection itself is recorded in the forensic log so audit trails
+    # can distinguish refused-by-policy from never-attempted.
     if [[ ! -L "$path" ]] && ! validate_path_for_deletion "$path"; then
+        _mole_delete_log "$mode" "0" "rejected" "$path"
         return 1
     fi
 
     # Capture size before the delete so the log line is still useful when the
-    # path is gone afterwards. sudo variant avoids "du: Permission denied".
-    local size_kb=0
+    # path is gone afterwards. Use "unknown" (not 0) on failure so the log
+    # never lies about a multi-GB delete by recording it as 0KB.
+    local size_kb="unknown"
     if [[ -e "$path" ]]; then
+        local raw_size=""
+        local du_rc=0
         if [[ "$needs_sudo" == "true" ]]; then
-            size_kb=$(sudo du -skP "$path" 2> /dev/null | awk '{print $1}' || echo "0")
+            raw_size=$(sudo du -skP "$path" 2> /dev/null | awk '{print $1; exit}')
+            du_rc=${PIPESTATUS[0]}
         else
-            size_kb=$(get_path_size_kb "$path" 2> /dev/null || echo "0")
+            raw_size=$(get_path_size_kb "$path" 2> /dev/null) || du_rc=$?
+        fi
+        if [[ "$du_rc" -eq 0 && "$raw_size" =~ ^[0-9]+$ ]]; then
+            size_kb="$raw_size"
         fi
     fi
-    [[ "$size_kb" =~ ^[0-9]+$ ]] || size_kb=0
 
     if [[ "${MOLE_DRY_RUN:-0}" == "1" ]]; then
         debug_log "[DRY RUN] Would delete ($mode): $path"
@@ -467,6 +479,13 @@ mole_delete() {
             _mole_delete_log "trash" "$size_kb" "ok" "$path"
             log_operation "${MOLE_CURRENT_COMMAND:-uninstall}" "TRASHED" "$path" "${size_kb}KB"
             return 0
+        fi
+        # User explicitly chose Trash for recoverability. Surface the fallback
+        # to permanent rm once per session so they know an "undo" isn't there.
+        if [[ -z "${_MOLE_TRASH_FALLBACK_WARNED:-}" ]]; then
+            _MOLE_TRASH_FALLBACK_WARNED=1
+            export _MOLE_TRASH_FALLBACK_WARNED
+            printf 'Warning: Trash unavailable, removing permanently. Subsequent files this session also bypass Trash.\n' >&2
         fi
         debug_log "Trash move failed, falling back to permanent delete: $path"
     fi
@@ -543,14 +562,31 @@ _mole_delete_log() {
     local log_file="${MOLE_DELETE_LOG:-$HOME/Library/Logs/mole/deletions.log}"
     local log_dir
     log_dir=$(dirname "$log_file")
-    mkdir -p "$log_dir" 2> /dev/null || return 0
+
+    # Surface log-write failures once per session. The deletions log is the
+    # only audit trail for Trash-routed removals; silently no-oping when the
+    # log dir is unwritable (root-owned from prior sudo, ENOSPC, read-only
+    # volume) defeats the design.
+    if ! mkdir -p "$log_dir" 2> /dev/null; then
+        _mole_warn_log_broken "create directory: $log_dir"
+        return 0
+    fi
 
     local ts
     ts=$(date '+%Y-%m-%dT%H:%M:%S%z' 2> /dev/null || echo "unknown")
 
-    printf '%s\t%s\t%s\t%s\t%s\n' \
+    if ! printf '%s\t%s\t%s\t%s\t%s\n' \
         "$ts" "$mode" "$size_kb" "$status" "$target" \
-        >> "$log_file" 2> /dev/null || true
+        >> "$log_file" 2> /dev/null; then
+        _mole_warn_log_broken "write to: $log_file"
+    fi
+}
+
+_mole_warn_log_broken() {
+    [[ -n "${_MOLE_DELETE_LOG_WARNED:-}" ]] && return 0
+    _MOLE_DELETE_LOG_WARNED=1
+    export _MOLE_DELETE_LOG_WARNED
+    printf 'Warning: deletions audit log unavailable (%s). Forensic trail incomplete this session.\n' "$1" >&2
 }
 
 # ============================================================================
@@ -588,9 +624,15 @@ safe_find_delete() {
         find_args+=("-mtime" "+$age_days")
     fi
 
-    # Iterate results to respect should_protect_path
+    # Iterate results to respect both system protection and user whitelist.
+    # Per-caller whitelist gates were missed in past releases (see #710, #724,
+    # #738, #744, #757); enforcing here makes the protection structural so
+    # new clean_* functions get whitelist enforcement for free.
     while IFS= read -r -d '' match; do
         if should_protect_path "$match"; then
+            continue
+        fi
+        if declare -f is_path_whitelisted > /dev/null && is_path_whitelisted "$match"; then
             continue
         fi
         safe_remove "$match" true || true
@@ -635,9 +677,13 @@ safe_sudo_find_delete() {
         find_args+=("-mtime" "+$age_days")
     fi
 
-    # Iterate results to respect should_protect_path
+    # Iterate results to respect both system protection and user whitelist.
+    # See safe_find_delete for rationale (#757).
     while IFS= read -r -d '' match; do
         if should_protect_path "$match"; then
+            continue
+        fi
+        if declare -f is_path_whitelisted > /dev/null && is_path_whitelisted "$match"; then
             continue
         fi
         safe_sudo_remove "$match" || true

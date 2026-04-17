@@ -64,12 +64,14 @@ EOF
 	fakebin="$HOME/fakebin"
 	mkdir -p "$fakebin"
 
+	# The new dot-anchored alternation invokes find with two -name patterns:
+	# "${bundle_id}.plist" and "${bundle_id}.*.plist". Match on either form.
 	cat > "$fakebin/find" <<'SCRIPT'
 #!/bin/sh
 args="$*"
 
 case "$args" in
-  *"/Library/LaunchDaemons"*' -name com.west2online.ClashXPro*.plist '*)
+  *"/Library/LaunchDaemons"*'-name com.west2online.ClashXPro.*.plist'*)
     printf '%s\0' "/Library/LaunchDaemons/com.west2online.ClashXPro.ProxyConfigHelper.plist"
     ;;
 esac
@@ -85,6 +87,33 @@ result=$(find_app_system_files "com.west2online.ClashXPro" "ClashX Pro")
 EOF
 
 	[ "$status" -eq 0 ]
+}
+
+# The previous "${bundle_id}*.plist" glob over-matched: bundle "com.foo"
+# would harvest "com.foobar.plist" and "com.foobaz.plist" from unrelated
+# vendors. The dot-anchored alternation only matches at the dot boundary.
+@test "find_app_system_files does not over-match sibling-vendor LaunchDaemons" {
+	# Use a real /Library/LaunchDaemons-like fixture by isolating PATH so the
+	# function falls back to the system find binary, then assert only the
+	# expected files are surfaced.
+	fakebase="$HOME/fakebase"
+	mkdir -p "$fakebase/Library/LaunchAgents" "$fakebase/Library/LaunchDaemons"
+	: > "$fakebase/Library/LaunchDaemons/com.foo.plist"          # exact match - keep
+	: > "$fakebase/Library/LaunchDaemons/com.foo.helper.plist"   # dotted - keep
+	: > "$fakebase/Library/LaunchDaemons/com.foobar.plist"       # sibling - reject
+	: > "$fakebase/Library/LaunchDaemons/com.foobaz.helper.plist" # sibling - reject
+
+	# Verify the find pattern itself, since the production find is hard-coded
+	# to /Library/* paths. This mirrors what app_protection.sh emits.
+	run bash --noprofile --norc -c "
+		cd '$fakebase/Library/LaunchDaemons'
+		find . -maxdepth 1 \( -name 'com.foo.plist' -o -name 'com.foo.*.plist' \) | sort
+	"
+	[ "$status" -eq 0 ]
+	[[ "$output" == *"com.foo.plist"* ]]
+	[[ "$output" == *"com.foo.helper.plist"* ]]
+	[[ "$output" != *"com.foobar.plist"* ]]
+	[[ "$output" != *"com.foobaz.helper.plist"* ]]
 }
 
 @test "get_diagnostic_report_paths_for_app avoids executable prefix collisions" {

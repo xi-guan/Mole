@@ -96,8 +96,20 @@ clean_xcode_tools() {
                 if [[ "${DRY_RUN:-false}" == "true" ]]; then
                     echo -e "  ${YELLOW}${ICON_DRY_RUN}${NC} Unavailable simulators · would delete ${unavail_count} devices"
                 else
-                    run_with_timeout 5 xcrun simctl delete unavailable 2> /dev/null || true
-                    echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Unavailable simulators · deleted ${unavail_count} devices"
+                    # Capture exit code so a timeout (124) or simctl error
+                    # is reported instead of falsely echoing SUCCESS.
+                    local _delete_rc=0
+                    if declare -F xcrun > /dev/null 2>&1; then
+                        xcrun simctl delete unavailable > /dev/null 2>&1 || _delete_rc=$?
+                    else
+                        run_with_timeout 5 xcrun simctl delete unavailable > /dev/null 2>&1 || _delete_rc=$?
+                    fi
+                    if [[ $_delete_rc -eq 0 ]]; then
+                        echo -e "  ${GREEN}${ICON_SUCCESS}${NC} Unavailable simulators · deleted ${unavail_count} devices"
+                    else
+                        echo -e "  ${YELLOW}${ICON_WARNING}${NC} Unavailable simulators · simctl delete failed (exit=${_delete_rc})"
+                        debug_log "xcrun simctl delete unavailable returned $_delete_rc"
+                    fi
                 fi
                 note_activity
             fi

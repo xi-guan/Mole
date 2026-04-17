@@ -313,6 +313,40 @@ EOF
     [[ "$output" == *"would delete 2 devices"* ]]
 }
 
+# Previously the cleanup path used '|| true' followed by an unconditional
+# green SUCCESS echo, so a simctl timeout (124) or any failure was reported
+# as "deleted N devices". Capture exit code and branch on it.
+@test "clean_xcode_tools reports failure when simctl delete returns non-zero" {
+    run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/clean/app_caches.sh"
+pgrep() { return 1; }
+safe_clean() { echo "$2"; }
+xcrun() {
+    case "$*" in
+        "simctl list devices unavailable")
+            echo "== Devices =="
+            echo "-- Unavailable --"
+            echo "    iPhone 12 (ABCDEF01-2345-6789-ABCD-EF0123456789) (Shutdown) (unavailable)"
+            return 0
+            ;;
+        "simctl delete unavailable")
+            return 124   # simulate run_with_timeout firing
+            ;;
+    esac
+    return 0
+}
+export -f xcrun
+clean_xcode_tools
+EOF
+
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"deleted 1 devices"* ]]
+    [[ "$output" == *"simctl delete failed"* ]]
+    [[ "$output" == *"exit=124"* ]]
+}
+
 @test "clean_video_players includes Stremio caches" {
     run env HOME="$HOME" PROJECT_ROOT="$PROJECT_ROOT" /bin/bash --noprofile --norc << 'EOF'
 set -euo pipefail

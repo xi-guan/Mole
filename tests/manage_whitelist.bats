@@ -185,6 +185,66 @@ setup() {
     [ "$status" -eq 0 ]
 }
 
+# safe_find_delete must consult the user whitelist on every match. Per-caller
+# gates were missed in past releases (#710, #724, #738, #744); enforcing it
+# inside the iterator makes whitelist protection structural rather than
+# case-by-case. Regression for #757.
+@test "safe_find_delete respects user whitelist for matched paths (#757)" {
+    local target_dir="$HOME/safe_find_delete_target"
+    local protected_file="$target_dir/protected.mat"
+    local removable_file="$target_dir/removable.mat"
+    mkdir -p "$target_dir"
+    : > "$protected_file"
+    : > "$removable_file"
+    touch -t 202001010000 "$protected_file" "$removable_file"
+
+    HOME="$HOME" bash --noprofile --norc -c "
+        set -euo pipefail
+        source '$PROJECT_ROOT/lib/core/base.sh'
+        source '$PROJECT_ROOT/lib/core/app_protection.sh'
+        source '$PROJECT_ROOT/lib/core/file_ops.sh'
+        WHITELIST_PATTERNS=(\"$target_dir/protected.mat\")
+        safe_find_delete \"$target_dir\" '*' 1 f
+    " > /dev/null
+
+    [[ -f "$protected_file" ]] || {
+        printf 'protected file was unexpectedly removed\n' >&2
+        return 1
+    }
+    [[ ! -f "$removable_file" ]] || {
+        printf 'removable file was unexpectedly kept\n' >&2
+        return 1
+    }
+}
+
+@test "safe_find_delete respects user whitelist glob patterns (#757)" {
+    local target_dir="$HOME/idleassetsd_target"
+    local protected_file="$target_dir/Customer/cbbim-w-prod.mat"
+    local removable_file="$target_dir/other/extra.dat"
+    mkdir -p "$target_dir/Customer" "$target_dir/other"
+    : > "$protected_file"
+    : > "$removable_file"
+    touch -t 202001010000 "$protected_file" "$removable_file"
+
+    HOME="$HOME" bash --noprofile --norc -c "
+        set -euo pipefail
+        source '$PROJECT_ROOT/lib/core/base.sh'
+        source '$PROJECT_ROOT/lib/core/app_protection.sh'
+        source '$PROJECT_ROOT/lib/core/file_ops.sh'
+        WHITELIST_PATTERNS=(\"$target_dir/Customer/*\")
+        safe_find_delete \"$target_dir\" '*' 1 f
+    " > /dev/null
+
+    [[ -f "$protected_file" ]] || {
+        printf 'glob-whitelisted file was unexpectedly removed\n' >&2
+        return 1
+    }
+    [[ ! -f "$removable_file" ]] || {
+        printf 'non-whitelisted file was unexpectedly kept\n' >&2
+        return 1
+    }
+}
+
 @test "is_path_whitelisted collapses slashes in whitelist entries too (#724)" {
     local status
     if HOME="$HOME" bash --noprofile --norc -c "
