@@ -525,6 +525,14 @@ readonly DATA_PROTECTED_BUNDLES=(
     "com.shirtpocket.*"
     "homebrew.mxcl.*"
 
+    # Remote Desktop / Remote Access
+    "org.chromium.chromoting*"
+    "com.google.chrome_remote_desktop*"
+    "com.teamviewer.*"
+    "com.realvnc.*"
+    "com.logmein.*"
+    "com.anydesk.*"
+
     # Screenshot & Recording
     "com.cleanshot.*"
     "com.xnipapp.xnip"
