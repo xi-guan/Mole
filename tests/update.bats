@@ -2251,6 +2251,7 @@ probe() {
 export MOLE_TEST_MODE=1 MOLE_SKIP_MAIN=1
 source "$1"
 [[ -z "${2:-}" ]] || SCRIPT_DIR="$2"
+is_source_checkout() { return 1; }
 VERSION=1.0.0
 get_install_channel() { echo stable; }
 is_homebrew_install() { return 1; }
@@ -2499,4 +2500,32 @@ get_latest_version_from_github > /dev/null
 grep -q -- '--max-time 3 .*proxy=$' "$HOME/curl-calls" || exit 3
 SCRIPT
  [ "$status" -eq 0 ]
+}
+
+@test "a source checkout never looks up releases" {
+    run /bin/bash <<'SCRIPT'
+set -euo pipefail
+source "$PROJECT_ROOT/lib/core/common.sh"
+source "$PROJECT_ROOT/lib/manage/update.sh"
+VERSION=1.0.0
+get_install_channel() { echo stable; }
+is_homebrew_install() { return 1; }
+get_latest_version_from_github() { echo "$SCRIPT_DIR" >> "$HOME/calls"; echo 9.8.7; }
+# a worktree holds a .git file instead of a directory
+mkdir -p "$HOME/checkout/.git" "$HOME/worktree"
+touch "$HOME/worktree/.git"
+for SCRIPT_DIR in "$HOME/checkout" "$HOME/worktree"; do
+    check_for_updates
+done
+sleep 1
+[[ ! -e "$HOME/calls" ]] || exit 1
+[[ ! -e "$HOME/.cache/mole/version_check" ]] || exit 1
+# Control: an installed copy without .git still looks up.
+SCRIPT_DIR="$HOME/installed"
+mkdir -p "$SCRIPT_DIR"
+check_for_updates
+sleep 1
+[[ "$(cat "$HOME/calls")" == "$HOME/installed" ]] || exit 1
+SCRIPT
+    [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }

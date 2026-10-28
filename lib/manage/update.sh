@@ -804,6 +804,11 @@ is_nix_install() {
     [[ "${SCRIPT_DIR:-}" == /nix/store/* ]]
 }
 
+# git updates a source checkout, so a release lookup would only contact GitHub for nothing
+is_source_checkout() {
+    [[ -n "${SCRIPT_DIR:-}" && -e "$SCRIPT_DIR/.git" ]]
+}
+
 get_install_channel() {
     # This install's own receipt wins. install.sh --config can move the config
     # dir, and the launcher records where it went in SCRIPT_DIR, so reading the
@@ -973,6 +978,7 @@ _mole_write_update_cache() {
 check_for_updates() {
     local cache_dir="$HOME/.cache/mole" channel key now saved_key="" checked=0 interval=0
     is_nix_install && return 0
+    is_source_checkout && return 0
     ensure_user_dir "$cache_dir" || return 0
     # The receipt probes run in the foreground now, so an unreadable receipt
     # must not print sed's diagnostic before the user's command.
