@@ -166,6 +166,7 @@ check_notice('''
 VERSION=1.0.0
 get_install_channel(){ echo stable; }
 is_homebrew_install(){ return 1; }
+is_source_checkout(){ return 1; }
 get_latest_version_from_github(){ sleep 1; echo 9.8.7; }
 check_for_updates
 interactive_main_menu
