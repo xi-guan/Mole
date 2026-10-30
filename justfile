@@ -3,16 +3,9 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 _default:
     @just --list --unsorted --list-heading '' --list-prefix='- '
 
-# rebase local main onto upstream/main (fork's main may lag; push manually)
+# rebase onto the latest upstream release tag after showing its diff and security hints (push manually)
 pull:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    source scripts/lib/log.sh
-    log_info "fetching upstream"
-    git fetch upstream
-    log_info "rebasing local main onto upstream/main"
-    git pull --rebase --autostash upstream main
-    log_done "pull complete"
+    ./scripts/pull_release.sh
 
 # install dev dependencies
 setup:
